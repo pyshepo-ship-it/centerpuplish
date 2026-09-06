@@ -1,0 +1,321 @@
+"use client"
+
+import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { motion } from "framer-motion"
+import { GraduationCap, UserPlus, Loader2, CheckCircle, Lock, Mail, Phone, Home } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Grade, getGrades } from "@/lib/data-storage"
+import { STORAGE_KEYS } from "@/lib/storage-keys"
+import { writeRows, writeSetting } from "@/lib/memory-store"
+import { fetchPublicData } from "@/lib/supabase/sync"
+import { SiteName } from "@/components/site-name"
+import toast from "react-hot-toast"
+import { registerStudentAccount, refreshPortalSettings, portalLogin } from "@/lib/student-accounts"
+
+export default function StudentRegisterPage() {
+  const router = useRouter()
+  const [mounted, setMounted] = useState(false)
+  const [grades, setGrades] = useState<Grade[]>([])
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    guardianPhone: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    gradeId: "",
+    groupId: "",
+  })
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+  const [regMessage, setRegMessage] = useState("طلبك الآن في انتظار موافقة المعلم.\nبمجرد الموافقة يمكنك تسجيل الدخول بنفس البريد وكلمة المرور")
+  const [registrationOpen, setRegistrationOpen] = useState(true)
+  /** التفعيل المباشر مفعّل عند المعلم؟ — يُقرأ من السحابة لا من ذاكرة الجهاز */
+  const [autoApprove, setAutoApprove] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      // إعدادات البوابة (فتح التسجيل / التفعيل المباشر) من Supabase أولاً:
+      // جهاز الطالب لا يحتفظ بأي بيانات، فبدون هذا الجلب يبدو التفعيل المباشر مغلقاً دائماً
+      const settings = await refreshPortalSettings()
+      setRegistrationOpen(settings.open)
+      setAutoApprove(settings.autoApprove)
+
+      // الصفوف من Supabase مباشرة — المصدر الوحيد (لا تخزين محلي على الجهاز)
+      const pub = await fetchPublicData()
+      if (pub?.settings) {
+        // يُنسخ إلى ذاكرة الجلسة ما يخص البوابة فقط — لا حشو إعدادات غير لازمة
+        for (const key of ["registrationOpen", "autoApproveRegistration", "studentReportsEnabled"] as const) {
+          const value = pub.settings[key]
+          if (typeof value === "string") writeSetting(key, value)
+        }
+        setRegistrationOpen(pub.settings.registrationOpen !== "")
+        setAutoApprove(!!pub.settings.autoApproveRegistration)
+      }
+      if (pub && pub.grades.length > 0) {
+        const list = pub.grades.map(g => ({
+          id: g.id,
+          name: g.name,
+          academicYear: "",
+          createdAt: "",
+          groups: pub.groups
+            .filter(gr => gr.gradeId === g.id)
+            .map(gr => ({
+              id: gr.id,
+              name: gr.name,
+              days: gr.days || [],
+              startTime: gr.startTime || "",
+              endTime: gr.endTime || "",
+              monthlyFee: 0,
+              studentsCount: 0,
+            })),
+        }))
+        setGrades(list)
+        // في ذاكرة الجلسة فقط (تُمسح عند تحديث الصفحة) — لا يُكتب شيء على الجهاز
+        writeRows(STORAGE_KEYS.GRADES, list)
+      } else {
+        // تعذر السحاب (انقطاع/صلاحيات) — نخبر الزائر أن المصدر هو Supabase
+        const cached = getGrades()
+        if (cached.length > 0) {
+          setGrades(cached)
+          toast("تعذر تحديث قائمة الصفوف من Supabase الآن — حاول مجدداً", { icon: "⚠️" })
+        } else {
+          toast.error("تعذر تحميل قائمة الصفوف من Supabase — تحقق من اتصال الإنترنت وأعد المحاولة", { duration: 6000 })
+        }
+      }
+      setMounted(true)
+    }
+    load()
+  }, [])
+
+  const selectedGrade = grades.find(g => g.id === form.gradeId)
+
+  const submit = async () => {
+    setBusy(true)
+    const res = await registerStudentAccount(form)
+    if (res.ok) {
+      // التفعيل المباشر: نُدخل الطالب بوابته فوراً بدل أن يذهب لصفحة الدخول
+      if (autoApprove) {
+        const login = await portalLogin(form.email, form.password)
+        setBusy(false)
+        if (login.ok) {
+          toast.success("تم تفعيل حسابك — جارٍ فتح بوابتك 🎉")
+          router.push("/student")
+          return
+        }
+      }
+      setBusy(false)
+      setDone(true)
+      if (res.message) setRegMessage(res.message)
+    } else {
+      setBusy(false)
+      alert(res.error)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-emerald-50 dark:from-gray-950 dark:via-gray-950 dark:to-gray-900 font-arabic flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-lg"
+      >
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/30">
+            <GraduationCap className="w-9 h-9 text-white" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white mt-4">تسجيل طالب جديد</h1>
+          <p className="text-base font-bold text-indigo-600 dark:text-indigo-400 mt-1"><SiteName /></p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            {autoApprove
+              ? "سجّل بياناتك — حسابك يُفعَّل مباشرة وتدخل بوابتك فوراً"
+              : "سجّل بياناتك وستنتظر موافقة المعلم قبل تفعيل حسابك"}
+          </p>
+        </div>
+
+        <Card className="bg-white/90 dark:bg-gray-900/90 backdrop-blur border-gray-200 dark:border-gray-800 shadow-2xl">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-indigo-600" />
+              بيانات الطالب
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!mounted ? null : !registrationOpen ? (
+              <div className="text-center py-8">
+                <Lock className="w-12 h-12 mx-auto mb-3 text-amber-500" />
+                <p className="font-bold text-gray-900 dark:text-white">التسجيل مغلق حالياً</p>
+                <p className="text-sm text-gray-500 mt-2">أغلق المعلم باب التسجيل مؤقتاً — يرجى التواصل معه مباشرة</p>
+                <Link href="/student/login" className="inline-block mt-4">
+                  <Button variant="outline" className="border-indigo-500 text-indigo-600">
+                    لدي حساب؟ تسجيل الدخول
+                  </Button>
+                </Link>
+              </div>
+            ) : done ? (
+              <div className="text-center py-8">
+                <CheckCircle className="w-14 h-14 mx-auto mb-3 text-green-500" />
+                <p className="font-bold text-lg text-gray-900 dark:text-white">تم إرسال طلبك بنجاح 🎉</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed whitespace-pre-line">{regMessage}</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  بعدها يمكنك تسجيل الدخول بنفس البريد وكلمة المرور ومتابعة تقريرك (الدرجات والمدفوعات والحضور).
+                </p>
+                <Link href="/student/login" className="inline-block mt-5">
+                  <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+                    الانتقال لتسجيل الدخول
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <Label>الاسم الكامل *</Label>
+                  <Input
+                    placeholder="مثال: أحمد محمد علي"
+                    value={form.name}
+                    onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                    className="mt-1"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>رقم الهاتف * <span className="text-xs text-gray-400">(أرقام فقط بدون حروف)</span></Label>
+                    <div className="relative mt-1">
+                      <Input
+                        dir="ltr"
+                        placeholder="01012345678"
+                        value={form.phone}
+                        onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
+                        className="pr-10"
+                      />
+                      <Phone className="w-4 h-4 text-gray-400 absolute top-1/2 right-3 -translate-y-1/2" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>هاتف ولي الأمر * (إجباري)</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        dir="ltr"
+                        placeholder="01098765432"
+                        value={form.guardianPhone}
+                        onChange={e => setForm(p => ({ ...p, guardianPhone: e.target.value }))}
+                        className="pr-10"
+                      />
+                      <Phone className="w-4 h-4 text-amber-500 absolute top-1/2 right-3 -translate-y-1/2" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>البريد الإلكتروني *</Label>
+                    <div className="relative mt-1">
+                      <Input
+                        dir="ltr"
+                        type="email"
+                        placeholder="student@example.com"
+                        value={form.email}
+                        onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                        className="pr-10"
+                      />
+                      <Mail className="w-4 h-4 text-gray-400 absolute top-1/2 right-3 -translate-y-1/2" />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <Label>الصف *</Label>
+                  <Select
+                    value={form.gradeId}
+                    onValueChange={val => setForm(p => ({ ...p, gradeId: val, groupId: "" }))}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="اختر صفك" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {grades.map(g => (
+                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>المجموعة * {form.gradeId && <span className="text-xs text-gray-400">(مجموعات صفك فقط)</span>}</Label>
+                  <Select
+                    value={form.groupId}
+                    disabled={!form.gradeId}
+                    onValueChange={val => setForm(p => ({ ...p, groupId: val }))}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder={form.gradeId ? "اختر مجموعتك" : "اختر الصف أولاً"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedGrade?.groups.map(g => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name} {g.startTime && g.endTime ? `(${g.days.join("، ")} — ${g.startTime})` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>كلمة المرور *</Label>
+                    <Input
+                      type="password"
+                      placeholder="6 أحرف على الأقل"
+                      value={form.password}
+                      onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label>تأكيد كلمة المرور *</Label>
+                    <Input
+                      type="password"
+                      placeholder="أعد كتابة كلمة المرور"
+                      value={form.confirmPassword}
+                      onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={submit}
+                  disabled={busy}
+                  className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white h-12 text-base"
+                >
+                  {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserPlus className="w-5 h-5" />}
+                  <span>{busy ? "جاري الإرسال..." : autoApprove ? "إنشاء الحساب والدخول مباشرة" : "إرسال طلب التسجيل"}</span>
+                </Button>
+
+                <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+                  لديك حساب بالفعل؟{" "}
+                  <Link href="/student/login" className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline">
+                    سجّل الدخول
+                  </Link>
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="text-center mt-5">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600">
+            <Home className="w-4 h-4" />
+            العودة للصفحة الرئيسية
+          </Link>
+        </div>
+      </motion.div>
+    </div>
+  )
+}
