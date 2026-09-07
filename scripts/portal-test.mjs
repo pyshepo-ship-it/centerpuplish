@@ -503,6 +503,12 @@ DS.saveAttendance([
 
 const honoree = { id: "h-1", studentId: "st-old", studentName: "محمد علي حسن", groupId: "gr-1", reason: "النجاح والتفوق", month: M, year: Y, days: 30, createdAt: new Date().toISOString() }
 DS.saveHonorees([honoree])
+const removedHonoree = { ...honoree, removedAt: "2026-09-07T12:00:00Z" }
+eq("الإزالة اللينة تُخفي المتفوق دون حذف صفه", DS.isHonoreeActive(honoree) && !DS.isHonoreeActive(removedHonoree))
+// يبقى الصف نفسه مصدراً تاريخياً لتقرير الطالب بعد اختفائه من اللوحة العامة.
+DS.saveHonorees([removedHonoree])
+const homeSource = readFileSync("src/app/page.tsx", "utf8")
+eq("المستهلك العام يفلتر removedAt دفاعياً في السحابة وذاكرة المعاينة", homeSource.includes("publicData.honorees.filter(honoree => isHonoreeActive(honoree))") && homeSource.includes("getHonorees().filter(honoree => isHonoreeActive(honoree))"))
 
 const report = SR.collectStudentReport("st-old")
 eq("التقرير يجمع الطالب الصحيح", report.student.id === "st-old")
@@ -511,8 +517,30 @@ eq("محاولة الاختبار الإلكتروني ظهرت بعنوانها
 eq("الاستحقاقات والدفعات صحيحة", report.totalDue === 100 && report.totalPaid === 60)
 eq("الرصيد = 100 - 60 = 40", report.balance === 40)
 eq("الحضور: 4 أيام، 3 حضور (متأخر يحسب حضوراً)، نسبة 75%", report.attendance.total === 4 && report.attendance.present === 3 && report.attendance.absent === 1 && report.attendance.rate === 75)
-eq("التكريم ظاهر في التقرير", report.honors.length === 1)
+eq("التكريم المُزال من اللوحة يبقى في التقرير التاريخي", report.honors.length === 1 && report.honors[0].removedAt === removedHonoree.removedAt)
 eq("عناوين التقارير عربية", SR.STUDENT_REPORT_LABELS.comprehensive.startsWith("التقرير الشامل") && SR.STUDENT_REPORT_LABELS.payments.includes("المدفوعات"))
+
+// اعتماد محاولة يعزل بقية محاولات الاختبار عن العرض والمتوسط، لا عن العد الخام.
+const adoptedVisible = {
+  ...attempts[0], id: "att-adopted", examId: "ex-adoption", examTitle: "اختبار الاعتماد",
+  score: 5, totalMarks: 10, adoptedAt: "2026-09-07T10:00:00Z", resultReleasedAt: "2026-09-07T11:00:00Z",
+}
+const hiddenAfterAdoption = {
+  ...attempts[0], id: "att-hidden", examId: "ex-adoption", examTitle: "اختبار الاعتماد",
+  score: 10, totalMarks: 10, resultReleasedAt: "2026-09-07T11:00:00Z",
+}
+const adoptedRows = SR.buildStudentGradeRows({ manualGrades: [], examAttempts: [hiddenAfterAdoption, adoptedVisible] })
+eq("اعتماد محاولة يُظهرها وحدها في صفوف الدرجات", adoptedRows.length === 1 && adoptedRows[0].score === 5 && adoptedRows[0].subtitle.includes("معتمدة من المعلم"))
+const adoptedReport = { ...report, manualGrades: [], examAttempts: [hiddenAfterAdoption, adoptedVisible] }
+const adoptedComprehensive = SR.buildStudentReportPagesHtml({ report: adoptedReport, type: "comprehensive", mode: "student" }).html
+eq("متوسط التقرير الشامل يعزل المحاولة المخفية مع إبقاء عدد التقييمات الخام", adoptedComprehensive.includes("النسبة العامة: 50%") && adoptedComprehensive.includes("عدد التقييمات: 2"))
+const pendingAdopted = {
+  ...adoptedVisible, id: "att-adopted-pending", gradingStatus: "pending_review", manualTotal: 5,
+  resultReleasedAt: undefined,
+}
+const pendingRows = SR.buildStudentGradeRows({ manualGrades: [], examAttempts: [pendingAdopted] })
+const pendingPrint = SR.buildStudentReportPagesHtml({ report: { ...report, manualGrades: [], examAttempts: [pendingAdopted] }, type: "grades", mode: "student" }).html
+eq("المحاولة المعتمدة المعلقة تحمل شارة الاعتماد في الصف والطباعة", pendingRows[0]?.pending === true && pendingRows[0]?.subtitle.includes("معتمدة من المعلم") && pendingPrint.includes("معتمدة من المعلم"))
 
 // سجل النقل ظهر في تقرير أحمد؟ لا — لكنه ظهر في تقرير سارة
 const saraReport = SR.collectStudentReport(saraId)
@@ -706,6 +734,19 @@ eq("فتح المراجعة يغلق حتى داخل الفترة المجدول
 })).open === false)
 eq("فتح المراجعة يُخفي الاختبار من لوحة الإعلانات العامة", PC.publicBoardExams([mkExam({ accessMode: "public", gradeId: "", reviewOpen: true })]).length === 0)
 eq("قبل فتح المراجعة يظهر في لوحة الإعلانات العامة", PC.publicBoardExams([mkExam({ accessMode: "public", gradeId: "" })]).length === 1)
+const serverClockExam = mkExam({
+  accessMode: "public", gradeId: "", availabilityMode: "scheduled",
+  availableFrom: "2020-01-01T11:00:00Z", availableUntil: "2020-01-01T13:00:00Z",
+})
+eq("لوحة الإعلانات تحسم النافذة المجدولة بالوقت الممرر من الخادم لا ساعة الهاتف", PC.publicBoardExams([serverClockExam], new Date("2020-01-01T12:00:00Z")).length === 1 && PC.publicBoardExams([serverClockExam]).length === 0)
+eq("الصفحة الرئيسية تمرر لقائمة الاختبارات مرساة الوقت القادمة من Supabase", homeSource.includes("publicData.examServerClock.serverNow + Math.max(0, performance.now()"))
+const studentPageSource = readFileSync("src/app/student/page.tsx", "utf8")
+const dashboardExamSource = readFileSync("src/app/dashboard/exams/page.tsx", "utf8")
+eq("المدد التاريخية المعروضة تُطبّع في الرئيسية وبوابة الطالب ولوحة المعلم", homeSource.includes("onlineExamDurationMinutes(exam.duration)") && studentPageSource.includes("onlineExamDurationMinutes(e.duration)") && dashboardExamSource.includes("onlineExamDurationMinutes(exam.duration)"))
+eq("بوابة الطالب تعرض نوافذ الإتاحة بمرساة Supabase لا ساعة الهاتف", studentPageSource.includes("examServerClock.serverNow + Math.max(0, performance.now() - examServerClock.receivedAt)"))
+eq("بطاقة الطالب تعزل الحالة والمراجعة إلى المحاولة المعتمدة دون تغيير عدّ الحد الخام", studentPageSource.includes("const displayedAttempts = adopted ? [adopted] : myAttempts") && studentPageSource.includes("attemptsStatus(e, report?.examAttempts || [], session.studentId)"))
+const reviewDialogSource = readFileSync("src/components/exam-review-dialog.tsx", "utf8")
+eq("حوار المراجعة يوضح اعتماد المحاولة حتى وهي معلقة", reviewDialogSource.includes("هذه هي المحاولة المعتمدة من المعلم"))
 
 eq("اختبار لصف آخر → لا يظهر للطالب", PC.isExamForStudent(mkExam({ gradeId: "g-2" }), "g-1", "gr-1") === false)
 eq("اختبار الصف بلا استهداف مجموعات → يظهر لكل المجموعات", PC.isExamForStudent(mkExam({}), "g-1", "gr-2") === true)

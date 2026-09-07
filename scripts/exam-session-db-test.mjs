@@ -109,7 +109,10 @@ try {
     }
     throw new Error("Worker did not reach the expected database lock")
   }
-  const start = (id, attempt) => worker.query(`SELECT public.start_online_exam_session($1,$2,$3,NULL,'Lock Guest') AS result`, [id, attempt, examId])
+  const start = (id, attempt) => worker.query(
+    `SELECT public.start_online_exam_session($1,$2,$3,NULL,'Lock Guest',NULL,'','',NULL,NULL,NULL) AS result`,
+    [id, attempt, examId]
+  )
   const lockKey = `${examId}:lock guest:`
 
   await admin.query("BEGIN")
@@ -140,7 +143,7 @@ try {
   await admin.query(`UPDATE public.online_exam_sessions SET
     answers='{"accepted":{"text":"Before deadline"}}', started_at=clock_timestamp()-interval '60 seconds',
     expires_at=clock_timestamp()+interval '200 milliseconds' WHERE id=$1`, [session.id])
-  const pendingSubmit = worker.query("SELECT public.submit_online_exam_session($1,$2,$3,false) AS result", [session.id, session.secret, { late: { text: "late submit" } }])
+  const pendingSubmit = worker.query("SELECT public.submit_online_exam_session($1,$2,$3,false,NULL) AS result", [session.id, session.secret, { late: { text: "late submit" } }])
   await waitUntilBlocked()
   await delay(250)
   await admin.query("COMMIT")

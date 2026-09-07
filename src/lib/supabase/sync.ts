@@ -932,8 +932,7 @@ export function pushHonorees(rows: any[]) {
     try {
       await pushRows("honorees", rows.map(toHonoreeRow));
     } catch (err: any) {
-      // الجدول قد لا يكون مُنشأ بعد — لا نكسر باقي المزامنة
-      if (err?.code === "42P01" || /does not exist/i.test(err?.message || "")) return;
+      // نفحص عمود 028 قبل عبارة does not exist العامة؛ خطأ 42703 يذكرها أيضاً.
       // عمود removed_at لم يُرحَّل بعد (028) — نرفع بدونه ولا نوقف المزامنة
       if (isMissingColumnError(err, "removed_at")) {
         await pushRows("honorees", rows.map((r) => {
@@ -943,6 +942,8 @@ export function pushHonorees(rows: any[]) {
         }));
         return;
       }
+      // الجدول قد لا يكون مُنشأ بعد — لا نكسر باقي المزامنة
+      if (err?.code === "42P01" || /does not exist/i.test(err?.message || "")) return;
       throw err;
     }
   })();
@@ -2201,6 +2202,8 @@ export interface StudentPortalData {
   announcements: any[]
   /** اختبارات صفه/مجموعته فقط */
   exams: any[]
+  /** مرساة وقت Supabase لعرض نوافذ الإتاحة دون الاعتماد على ساعة الهاتف. */
+  examServerClock?: { serverNow: number; receivedAt: number }
   /** مجموعات صفه (لطلب النقل) */
   gradeGroups: { id: string; name: string; days: string[]; startTime: string; endTime: string }[]
 }
@@ -2493,7 +2496,7 @@ export async function fetchStudentPortalDataResult(token: string): Promise<Stude
       sb.from("honorees").select("*"),
       sb.from("announcements").select("*"),
       // لا نقرأ exams الخام من بوابة الطالب؛ RPC 015 ينقّي المفاتيح أولاً.
-      sb.rpc("get_public_online_exams"),
+      sb.rpc("get_public_online_exams").then(result => ({ ...result, receivedAt: performance.now() })),
     ])
 
     if (!recordResult.ok) return recordResult
@@ -2506,6 +2509,8 @@ export async function fetchStudentPortalDataResult(token: string): Promise<Stude
     const hon = honRes.error ? [] : (honRes.data as any[] || [])
     const anns = annRes.error ? [] : (annRes.data as any[] || [])
     const examRows = examsRes.error || !Array.isArray(examsRes.data) ? [] : examsRes.data as any[]
+    const rawExamServerNow = examRows.find(row => row && typeof row.server_now === "string")?.server_now
+    const examServerNow = typeof rawExamServerNow === "string" ? Date.parse(rawExamServerNow) : NaN
 
     // مجموعات صفه (لطلب النقل + جدول مواعيده)
     const gradeGroupsAll = (groupsRes.data as any[] || []).filter((g) => g.grade_id === student.gradeId)
@@ -2548,6 +2553,9 @@ export async function fetchStudentPortalDataResult(token: string): Promise<Stude
             const targets = e.targetGroupIds || []
             return targets.length === 0 || targets.includes(student.groupId)
           }),
+        examServerClock: !examsRes.error && Number.isFinite(examServerNow)
+          ? { serverNow: examServerNow, receivedAt: examsRes.receivedAt }
+          : undefined,
         gradeGroups: gradeGroupsAll.map((g) => ({
           id: g.id,
           name: g.name,

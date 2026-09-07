@@ -85,6 +85,7 @@ import { HtmlPrintDialog } from "@/components/html-print-dialog"
 import { StudentSurveysPanel } from "@/components/surveys/student-surveys-panel"
 import { formatTime12 } from "@/lib/utils"
 import { getTeacherName } from "@/lib/branding"
+import { onlineExamDurationMinutes } from "@/lib/online-exam-clock"
 
 const MONTHS = [
   "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
@@ -124,6 +125,7 @@ export default function StudentPortalPage() {
   const [transferBusy, setTransferBusy] = useState(false)
   const [portalAnnouncements, setPortalAnnouncements] = useState<Announcement[]>([])
   const [portalExams, setPortalExams] = useState<Exam[]>([])
+  const [examServerClock, setExamServerClock] = useState<{ serverNow: number; receivedAt: number } | null>(null)
   const [inquiries, setInquiries] = useState<InquiryThread[]>([])
   // مراجعة اختبار (بعد أن يفتحها المعلم للجميع)
   const [reviewExam, setReviewExam] = useState<Exam | null>(null)
@@ -186,6 +188,7 @@ export default function StudentPortalPage() {
     setMyTransferRequests(portalData.transferRequests || [])
     setPortalAnnouncements(portalData.announcements as Announcement[])
     setPortalExams((portalData.exams as Exam[]).filter(e => isExamForStudent(e, portalData.student.gradeId, portalData.student.groupId)))
+    setExamServerClock(portalData.examServerClock || null)
 
     const inq = await fetchStudentInquiries(s.token || "")
     setInquiries(inq as any)
@@ -297,7 +300,9 @@ export default function StudentPortalPage() {
     )
   }
 
-  const now = new Date()
+  const now = examServerClock
+    ? new Date(examServerClock.serverNow + Math.max(0, performance.now() - examServerClock.receivedAt))
+    : new Date()
   // مواعيد مهمة: نوافذ الاختبارات المجدولة
   const scheduledExams = portalExams
     .filter(e => e.availabilityMode === "scheduled" && (e.availableFrom || e.availableUntil))
@@ -582,12 +587,15 @@ export default function StudentPortalPage() {
                       // الحد النهائي يُحسم داخل جلسة الخادم؛ نعرض هنا المحاولات
                       // التي استعادها الطالب بأسرار جلساته فقط.
                       const at = attemptsStatus(e, report?.examAttempts || [], session.studentId)
-                      const pendingAttempts = myAttempts.filter(a => attemptNeedsResultRelease(a))
+                      const adopted = adoptedAttemptOf(myAttempts)
+                      // حدّ المحاولات أعلاه يعتمد القائمة الأصلية كاملة. أمّا بعد
+                      // الاعتماد فتُعزل بقية المحاولات عن الحالة والمراجعة المعروضة فقط.
+                      const displayedAttempts = adopted ? [adopted] : myAttempts
+                      const pendingAttempts = displayedAttempts.filter(a => attemptNeedsResultRelease(a))
                       // لا تدخل درجات المقال أو التعليقات في أفضل نتيجة قبل إطلاقها الصريح.
-                      const releasedAttempts = myAttempts.filter(a => isAttemptResultReleased(a))
+                      const releasedAttempts = displayedAttempts.filter(a => isAttemptResultReleased(a))
                       // إن اعتمد المعلم محاولةً فهي ما يراه الطالب: درجةً إن كانت مُطلقة،
                       // وحالة انتظار إن لم تُطلق بعد — لا نستبدلها بمحاولة أخرى.
-                      const adopted = adoptedAttemptOf(myAttempts)
                       const bestAttempt = adopted
                         ? (attemptNeedsResultRelease(adopted) ? null : adopted)
                         : releasedAttempts.length
@@ -612,10 +620,10 @@ export default function StudentPortalPage() {
                               <p className="font-bold text-sm text-gray-900 dark:text-white truncate">{e.title}</p>
                               <p className="text-xs text-gray-400">
                                 <span className="text-indigo-600 dark:text-indigo-300 font-bold">{modeLabel}</span>
-                                {e.duration ? ` • ${e.duration} دقيقة` : ""} {e.totalMarks ? ` • ${e.totalMarks} درجة` : ""}
+                                {` • ${onlineExamDurationMinutes(e.duration)} دقيقة`} {e.totalMarks ? ` • ${e.totalMarks} درجة` : ""}
                                 {at.max > 0 && ` • المحاولات: ${at.used}/${at.max}`}
                               </p>
-                              {myAttempts.some(a => a.manualOverride) && (
+                              {displayedAttempts.some(a => a.manualOverride) && (
                                 <p className="text-[11px] text-purple-600 mt-0.5">توجد درجة معدلة يدوياً من المعلم</p>
                               )}
                             </div>
@@ -686,7 +694,10 @@ export default function StudentPortalPage() {
                             <div className="flex items-start gap-2 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 px-3 py-2.5 text-amber-800 dark:text-amber-200">
                               <Hourglass className="mt-0.5 h-4 w-4 shrink-0" />
                               <div className="min-w-0 text-sm">
-                                <p className="font-extrabold">{awaitingRelease ? "اكتملت المراجعة — النتيجة بانتظار إطلاق المعلم" : "إجابتك المقالية قيد مراجعة المعلم"}</p>
+                                <p className="font-extrabold">
+                                  {awaitingRelease ? "اكتملت المراجعة — النتيجة بانتظار إطلاق المعلم" : "إجابتك المقالية قيد مراجعة المعلم"}
+                                  {adopted?.id === latestPending.id && " — معتمدة من المعلم"}
+                                </p>
                                 {autoTotal > 0 && (
                                   <p className="mt-0.5 text-xs">الجزء المصحح تلقائياً: {autoScore} / {autoTotal}. لن تظهر درجة المقال أو التعليقات قبل إطلاق النتيجة.</p>
                                 )}

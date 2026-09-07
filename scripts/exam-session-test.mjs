@@ -794,6 +794,30 @@ section("Timeout metadata survives teacher read/edit/save, without inventing mis
   })
 }
 
+section("Honoree soft-removal compatibility")
+{
+  const writes = []
+  globalThis.__examCloud.from = table => {
+    if (table !== "honorees") throw new Error(`Unexpected table write: ${table}`)
+    return {
+      upsert: async rows => {
+        writes.push(JSON.parse(JSON.stringify(rows)))
+        return writes.length === 1
+          ? { error: { code: "42703", message: 'column "removed_at" does not exist' } }
+          : { error: null }
+      },
+      delete: () => ({ in: async () => ({ error: null }) }),
+    }
+  }
+  await SYNC.pushHonorees([{
+    id: "honoree-soft-removed", studentId: "student-1", studentName: "Test Student",
+    reason: "Test", month: 9, year: 2026, days: 1,
+    createdAt: "2026-09-07T00:00:00Z", removedAt: "2026-09-07T12:00:00Z",
+  }])
+  eq("A pre-028 removed_at error retries the honoree upsert without that column",
+    writes.length === 2 && writes[0][0].removed_at && !("removed_at" in writes[1][0]))
+}
+
 globalThis.__examCloud = undefined
 Date.now = realNow
 Object.defineProperty(performance, "now", { configurable: true, value: realPerformanceNow })

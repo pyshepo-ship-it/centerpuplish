@@ -245,7 +245,7 @@ export function buildStudentGradeRows(
       return {
         title: a.examTitle || "اختبار إلكتروني",
         subtitle: pending
-          ? `نتيجة بانتظار مراجعة وإطلاق المعلم${monthLabel ? ` — ${monthLabel}` : ""}`
+          ? `نتيجة بانتظار مراجعة وإطلاق المعلم${monthLabel ? ` — ${monthLabel}` : ""}${a.adoptedAt ? " — معتمدة من المعلم" : ""}`
           : [monthLabel, submitted].filter(Boolean).join(" — ") + (a.adoptedAt ? " — معتمدة من المعلم" : ""),
         score: pending ? 0 : effectiveAttemptScore(a),
         max: a.totalMarks,
@@ -338,7 +338,7 @@ function gradesBlocks(report: StudentReport): Block[] {
           <td style="${TD}">${esc(dateLabel(a.submittedAt))}</td>
           <td style="${TD}text-align:right;font-weight:700;">${esc(a.examTitle || "اختبار إلكتروني")}</td>
           <td style="${TD}">اختبار إلكتروني${examAttemptMonthLabel(a) ? ` — ${esc(examAttemptMonthLabel(a))}` : ""}</td>
-          <td colspan="2" style="${TD}font-weight:800;color:#a16207;">قيد مراجعة المعلم — تُعلن النتيجة بعد الإطلاق</td>
+          <td colspan="2" style="${TD}font-weight:800;color:#a16207;">قيد مراجعة المعلم — تُعلن النتيجة بعد الإطلاق${a.adoptedAt ? " — معتمدة من المعلم" : ""}</td>
         </tr>
       `)
       continue
@@ -596,7 +596,9 @@ function comprehensiveBlocks(report: StudentReport): Block[] {
     let s = 0, m = 0
     for (const g of report.manualGrades) { s += g.score; m += g.maxScore }
     // لا تدخل محاولات المقال غير المعلنة في النسبة المطبوعة للطالب.
-    for (const a of report.examAttempts) {
+    // تُحسب النسبة من نفس المحاولات الظاهرة: إن اعتمد المعلم محاولةً
+    // تُستبعد محاولات الاختبار الأخرى من المتوسط فقط، وتبقى في العدّ الخام أدناه.
+    for (const a of effectiveReportAttempts(report.examAttempts)) {
       if (attemptNeedsResultRelease(a)) continue
       s += effectiveAttemptScore(a)
       m += a.totalMarks

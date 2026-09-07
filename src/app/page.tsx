@@ -48,6 +48,7 @@ import { formatTime12 } from "@/lib/utils"
 import { fetchPublicData } from "@/lib/supabase/sync"
 import { toPublicExamCard } from "@/lib/exam-public"
 import { publicBoardExams } from "@/lib/portal-content"
+import { onlineExamDurationMinutes } from "@/lib/online-exam-clock"
 import { TeacherSignature } from "@/components/teacher-signature"
 import toast from "react-hot-toast"
 
@@ -98,7 +99,8 @@ export default function HomePage() {
       const publicData = await fetchPublicData()
       if (publicData) {
         setAnnouncements(publicData.announcements)
-        setHonorees(publicData.honorees)
+        // دفاع إضافي عند المستهلك العام، بما يشمل مصادر المعاينة القديمة.
+        setHonorees(publicData.honorees.filter(honoree => isHonoreeActive(honoree)))
         setFiles(publicData.files)
         setLinks(publicData.links)
         // بناء بنية الصفوف والمجموعات من البيانات العامة
@@ -124,7 +126,14 @@ export default function HomePage() {
         setWhatsappNumber(publicData.settings?.whatsappNumber || "")
         // لوحة الإعلانات تعرض الاختبارات «المفتوحة للجميع» فقط (بلا أسئلة إطلاقاً) —
         // اختبارات الأعضاء المسجلين تظهر في بوابة الطالب حسب صف كل طالب
-        setOnlineExams(publicBoardExams(publicData.exams || []).map(toPublicExamCard))
+        setOnlineExams(
+          publicBoardExams(
+            publicData.exams || [],
+            publicData.examServerClock
+              ? new Date(publicData.examServerClock.serverNow + Math.max(0, performance.now() - publicData.examServerClock.receivedAt))
+              : undefined
+          ).map(toPublicExamCard)
+        )
         // حالة نشر الجدول + اسم المعلم لتوقيع الجدول المطبوع
         setSchedulePublished(publicData.settings?.schedulePublished === "1")
         setPublicTeacher({
@@ -135,7 +144,7 @@ export default function HomePage() {
         // 2) تعذر الوصول إلى Supabase: تُعرض ذاكرة الجلسة فقط (لا تخزين محلي على الجهاز)
         setGrades(getGrades())
         setAnnouncements(getAnnouncements())
-        setHonorees(getHonorees())
+        setHonorees(getHonorees().filter(honoree => isHonoreeActive(honoree)))
         setFiles(getSharedFiles())
         setLinks(getImportantLinks())
         setWhatsappNumber(getSetting("whatsappNumber"))
@@ -621,7 +630,7 @@ export default function HomePage() {
                           </p>
                         )}
                         <p className="text-sm text-gray-500 mt-1">
-                          الزمن {exam.duration || 60} دقيقة
+                          الزمن {onlineExamDurationMinutes(exam.duration)} دقيقة
                           {exam.totalMarks ? ` • ${exam.totalMarks} درجة` : ""}
                         </p>
                         <p className="text-indigo-600 text-sm font-semibold mt-3">ابدأ الاختبار ←</p>

@@ -75,18 +75,21 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.authorize_online_exam_session(TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 
+-- كل معاملات الواجهات الجديدة إلزامية عمداً. وجود DEFAULT كان يجعل PostgreSQL
+-- يقبل شكل RPC القديم رغم إسقاط توقيعه؛ وعند الزائر كان submit القديم يحذف
+-- p_only_if_expired فيصل إلى false ويحوّل نداء المؤقت إلى تسليم يدوي مبكر.
 CREATE OR REPLACE FUNCTION public.start_online_exam_session(
   p_session_id TEXT,
   p_attempt_id TEXT,
   p_exam_id TEXT,
-  p_student_id TEXT DEFAULT NULL,
-  p_student_name TEXT DEFAULT '',
-  p_phone TEXT DEFAULT NULL,
-  p_grade_id TEXT DEFAULT '',
-  p_group_id TEXT DEFAULT '',
-  p_device_card TEXT DEFAULT NULL,
-  p_device_fp TEXT DEFAULT NULL,
-  p_student_token TEXT DEFAULT NULL
+  p_student_id TEXT,
+  p_student_name TEXT,
+  p_phone TEXT,
+  p_grade_id TEXT,
+  p_group_id TEXT,
+  p_device_card TEXT,
+  p_device_fp TEXT,
+  p_student_token TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -420,7 +423,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_online_exam_answer_feedback(
   p_session_id TEXT,
   p_session_secret TEXT,
-  p_student_token TEXT DEFAULT NULL
+  p_student_token TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -509,7 +512,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_online_exam_result(
   p_session_id TEXT,
   p_session_secret TEXT,
-  p_student_token TEXT DEFAULT NULL
+  p_student_token TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -610,9 +613,9 @@ $$;
 CREATE OR REPLACE FUNCTION public.submit_online_exam_session(
   p_session_id TEXT,
   p_session_secret TEXT,
-  p_answers JSONB DEFAULT NULL,
-  p_only_if_expired BOOLEAN DEFAULT false,
-  p_student_token TEXT DEFAULT NULL
+  p_answers JSONB,
+  p_only_if_expired BOOLEAN,
+  p_student_token TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -664,7 +667,13 @@ BEGIN
     -- لا نعيد الصف الخام: قد يكون المعلم أضاف مراجعة لم يطلقها بعد.
     v_result := public.get_online_exam_result(p_session_id, p_session_secret, p_student_token);
     IF v_result->>'state' <> 'submitted' THEN RAISE EXCEPTION 'المحاولة المسلَّمة غير موجودة'; END IF;
-    RETURN v_result || jsonb_build_object('timedOut', COALESCE((v_result->'attempt'->'manual_override'->>'timedOut')::boolean, false));
+    RETURN v_result || jsonb_build_object(
+      'timedOut', CASE
+        WHEN jsonb_typeof(v_result->'attempt'->'manual_override'->'timedOut') = 'boolean'
+          THEN (v_result->'attempt'->'manual_override'->>'timedOut')::boolean
+        ELSE false
+      END
+    );
   END IF;
   IF p_only_if_expired AND v_now < v_session.expires_at THEN
     RETURN jsonb_build_object('state', 'in_progress',
@@ -815,6 +824,15 @@ BEGIN
        AND (NOT p.prosecdef OR p.proconfig IS NULL)
   ) THEN
     RAISE EXCEPTION 'دوال الاختبار لا تحمل صلاحيات/مسار بحث آمن';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public'
+       AND p.proname IN ('start_online_exam_session', 'get_online_exam_answer_feedback',
+         'get_online_exam_result', 'submit_online_exam_session')
+       AND p.pronargdefaults > 0
+  ) THEN
+    RAISE EXCEPTION 'معاملات RPC الآمنة يجب ألا تملك قيماً افتراضية تقبل شكل الاستدعاء القديم';
   END IF;
 END;
 $$;

@@ -129,6 +129,9 @@ export function ExamReviewDialog({ open, onOpenChange, exam, attempts, studentNa
             <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-5 text-center text-amber-800 dark:text-amber-200">
               <Hourglass className="mx-auto mb-2 h-8 w-8" />
               <p className="font-extrabold">النتيجة النهائية قيد المراجعة</p>
+              {best.adoptedAt && (
+                <p className="mt-1 text-sm font-bold">هذه هي المحاولة المعتمدة من المعلم.</p>
+              )}
               {best.autoTotal && best.autoTotal > 0 ? (
                 <p className="mt-1 text-sm">الجزء المصحح تلقائياً: {typeof best.autoScore === "number" ? best.autoScore : best.score} / {best.autoTotal}</p>
               ) : (

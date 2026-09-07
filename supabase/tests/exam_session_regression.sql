@@ -7,7 +7,7 @@ DECLARE v_denied BOOLEAN := false;
 BEGIN
   BEGIN
     EXECUTE p_sql;
-  EXCEPTION WHEN raise_exception OR insufficient_privilege THEN
+  EXCEPTION WHEN raise_exception OR insufficient_privilege OR undefined_function THEN
     v_denied := true;
   END;
   ASSERT v_denied, 'Expected an authorization error: ' || p_sql;
@@ -62,11 +62,16 @@ BEGIN
   ASSERT to_regprocedure('public.get_online_exam_answer_feedback(text,text)') IS NULL, 'Old feedback bypass remains';
   ASSERT to_regprocedure('public.submit_online_exam_session(text,text,jsonb)') IS NULL, 'Old submission bypass remains';
   ASSERT to_regprocedure('public.start_online_exam_session(text,text,text,text,text,text,text,text,text,text)') IS NULL, 'Old start bypass remains';
+  -- PostgreSQL يقبل عدداً أقل من المعاملات عند وجود DEFAULT في التوقيع الجديد؛
+  -- لذلك نختبر الاستدعاء القديم نفسه، لا غياب التوقيع القديم من الكتالوج فقط.
+  PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
+    '__exam_test_stale_session', '__exam_test_stale_attempt', '__exam_test_public',
+    NULL, 'Stale Public Guest', NULL, '', '', NULL, NULL) $q$);
 
   FOR v_case IN SELECT * FROM (VALUES (1, 60), (2, 60), (3, 60), (4, 1), (5, 30), (6, 1440)) x(n, minutes) LOOP
     v_session := public.start_online_exam_session(
       '__exam_test_duration_session_' || v_case.n, '__exam_test_duration_attempt_' || v_case.n,
-      '__exam_test_duration_' || v_case.n, NULL, 'Test Guest');
+      '__exam_test_duration_' || v_case.n, NULL, 'Test Guest', NULL, '', '', NULL, NULL, NULL);
     v_expected := v_case.minutes * 60;
     ASSERT extract(epoch FROM ((v_session->>'expiresAt')::timestamptz - (v_session->>'startedAt')::timestamptz)) = v_expected,
       'Duration mismatch for ' || v_case.n;
@@ -75,15 +80,15 @@ BEGIN
 
   PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
     '__exam_test_forged_session', '__exam_test_forged_attempt', '__exam_test_private',
-    '__exam_test_owner', 'Fake Name') $q$);
+    '__exam_test_owner', 'Fake Name', NULL, '', '', NULL, NULL, NULL) $q$);
   PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
     '__exam_test_forged_session', '__exam_test_forged_attempt', '__exam_test_private',
-    '__exam_test_owner', 'Fake Name', p_student_token => 'exam-test-other-token') $q$);
+    '__exam_test_owner', 'Fake Name', NULL, '', '', NULL, NULL, 'exam-test-other-token') $q$);
 
   v_session := public.start_online_exam_session(
     '__exam_test_owner_session', '__exam_test_owner_attempt', '__exam_test_private',
-    '__exam_test_owner', 'Fake Name', NULL, 'fake-grade', 'fake-group',
-    p_student_token => 'exam-test-owner-token');
+    '__exam_test_owner', 'Fake Name', NULL, 'fake-grade', 'fake-group', NULL, NULL,
+    'exam-test-owner-token');
   INSERT INTO exam_test_sessions VALUES ('owner', v_session);
 
   -- Early automatic submission MUST NOT write answers or create an attempt.
@@ -115,7 +120,7 @@ DECLARE v_session JSONB; v_result JSONB;
 BEGIN
   SELECT payload INTO v_session FROM exam_test_sessions WHERE kind = 'owner';
   PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_session_status(%L, %L)', v_session->>'id', 'wrong-secret'));
-  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L)', v_session->>'id', v_session->>'secret'));
+  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L, NULL)', v_session->>'id', v_session->>'secret'));
   PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_answer_feedback(%L, %L, %L)', v_session->>'id', v_session->>'secret', 'exam-test-other-token'));
   PERFORM pg_temp.expect_denied(format('SELECT public.submit_online_exam_session(%L, %L, NULL, false, %L)', v_session->>'id', v_session->>'secret', 'exam-test-other-token'));
 
@@ -135,7 +140,7 @@ RESET ROLE;
 -- Teacher adds an unreleased review, override, and adoption AFTER the first submission.
 UPDATE public.exam_attempts
    SET answers = answers || '{"essay":{"text":"Student answer","review":{"score":3,"comment":"Private teacher comment"}}}'::jsonb,
-       manual_override = manual_override || '{"manualScore":3,"score":5,"reason":"Private override","adoptedAt":"2026-09-07T12:00:00Z"}'::jsonb
+       manual_override = manual_override || '{"manualScore":3,"score":5,"reason":"Private override","adoptedAt":"2026-09-07T12:00:00Z","timedOut":"malformed-legacy-value"}'::jsonb
  WHERE id = '__exam_test_owner_attempt';
 
 SET LOCAL ROLE anon;
@@ -146,13 +151,16 @@ BEGIN
   v_result := public.get_online_exam_result(v_session->>'id', v_session->>'secret', 'exam-test-owner-token');
   v_repeat := public.submit_online_exam_session(v_session->>'id', v_session->>'secret', '{}', false, 'exam-test-owner-token');
   ASSERT v_result->'attempt' = v_repeat->'attempt', 'Repeat submission bypassed safe result gate';
+  ASSERT v_repeat->>'timedOut' = 'false', 'Malformed legacy timedOut metadata broke repeat submission';
   ASSERT NOT (v_result->'attempt'->'answers'->'essay' ? 'review'), 'Unreleased review leaked';
   ASSERT (v_result->'attempt'->'manual_override'->>'manualScore')::numeric = 0, 'Unreleased manual grade leaked';
   ASSERT NOT (v_result->'attempt'->'manual_override' ? 'score'), 'Unreleased override leaked';
   ASSERT v_result->'attempt'->'manual_override'->>'adoptedAt' = '2026-09-07T12:00:00Z', 'Adoption flag lost';
   PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L)', v_session->>'id', v_session->>'secret'));
   PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L, %L)', v_session->>'id', v_session->>'secret', 'exam-test-other-token'));
-  PERFORM pg_temp.expect_denied(format('SELECT public.submit_online_exam_session(%L, %L)', v_session->>'id', v_session->>'secret'));
+  -- إسقاط التوقيع وحده لا يكفي إن بقيت معاملات التوقيع الجديد DEFAULT؛
+  -- هذا هو شكل عميل ما قبل 029 ويجب أن يكون غير قابل للاستدعاء فعلياً.
+  PERFORM pg_temp.expect_denied(format('SELECT public.submit_online_exam_session(%L, %L, NULL)', v_session->>'id', v_session->>'secret'));
 END;
 $$;
 RESET ROLE;
@@ -171,7 +179,9 @@ BEGIN
   ASSERT v_result->'attempt'->'answers'->'essay'->'review'->>'comment' = 'Private teacher comment';
   ASSERT (v_result->'attempt'->'manual_override'->>'score')::numeric = 5;
 
-  v_session := public.start_online_exam_session('__exam_test_guest_session', '__exam_test_guest_attempt', '__exam_test_public', NULL, 'Public Guest');
+  v_session := public.start_online_exam_session(
+    '__exam_test_guest_session', '__exam_test_guest_attempt', '__exam_test_public',
+    NULL, 'Public Guest', NULL, '', '', NULL, NULL, NULL);
   INSERT INTO exam_test_sessions VALUES ('guest', v_session);
   PERFORM public.save_online_exam_progress(v_session->>'id', v_session->>'secret', '{"saved":{"text":"Before timeout"}}');
 END;
@@ -186,12 +196,22 @@ DO $$
 DECLARE v_session JSONB; v_result JSONB;
 BEGIN
   SELECT payload INTO v_session FROM exam_test_sessions WHERE kind = 'guest';
+  PERFORM pg_temp.expect_denied(format(
+    'SELECT public.submit_online_exam_session(%L, %L, %L::jsonb)',
+    v_session->>'id', v_session->>'secret', '{"stale":{"text":"old client"}}'
+  ));
   ASSERT public.get_online_exam_session_status(v_session->>'id', v_session->>'secret')->>'state' = 'expired';
   ASSERT public.save_online_exam_progress(v_session->>'id', v_session->>'secret', '{"late":{"text":"Too late"}}')->>'state' = 'expired';
-  v_result := public.submit_online_exam_session(v_session->>'id', v_session->>'secret', '{"late":{"text":"Too late"}}', true);
+  v_result := public.submit_online_exam_session(v_session->>'id', v_session->>'secret', '{"late":{"text":"Too late"}}', true, NULL);
   ASSERT v_result->>'state' = 'submitted' AND v_result->>'timedOut' = 'true';
   ASSERT v_result->'attempt'->'answers' = '{"saved":{"text":"Before timeout"}}'::jsonb, 'Late answers accepted or saved answers lost';
-  ASSERT public.get_online_exam_result(v_session->>'id', v_session->>'secret')->>'state' = 'submitted', 'Public guest result unavailable';
+  ASSERT public.get_online_exam_result(v_session->>'id', v_session->>'secret', NULL)->>'state' = 'submitted', 'Public guest result unavailable';
+  PERFORM pg_temp.expect_denied(format(
+    'SELECT public.get_online_exam_result(%L, %L)', v_session->>'id', v_session->>'secret'
+  ));
+  PERFORM pg_temp.expect_denied(format(
+    'SELECT public.get_online_exam_answer_feedback(%L, %L)', v_session->>'id', v_session->>'secret'
+  ));
 END;
 $$;
 RESET ROLE;
@@ -203,9 +223,9 @@ DO $$
 DECLARE v_session JSONB;
 BEGIN
   SELECT payload INTO v_session FROM exam_test_sessions WHERE kind = 'guest';
-  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L)', v_session->>'id', v_session->>'secret'));
-  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_answer_feedback(%L, %L)', v_session->>'id', v_session->>'secret'));
-  PERFORM pg_temp.expect_denied(format('SELECT public.submit_online_exam_session(%L, %L)', v_session->>'id', v_session->>'secret'));
+  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L, NULL)', v_session->>'id', v_session->>'secret'));
+  PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_answer_feedback(%L, %L, NULL)', v_session->>'id', v_session->>'secret'));
+  PERFORM pg_temp.expect_denied(format('SELECT public.submit_online_exam_session(%L, %L, NULL, false, NULL)', v_session->>'id', v_session->>'secret'));
   SELECT payload INTO v_session FROM exam_test_sessions WHERE kind = 'owner';
   PERFORM pg_temp.expect_denied(format('SELECT public.get_online_exam_result(%L, %L, %L)', v_session->>'id', v_session->>'secret', 'exam-test-owner-token'));
 END;
@@ -228,12 +248,13 @@ DO $$
 BEGIN
   PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
     '__exam_test_banned_session', '__exam_test_banned_attempt', '__exam_test_limits', NULL, 'Banned Guest',
-    p_device_card=>repeat('e',32), p_device_fp=>repeat('d',64)) $q$);
-  PERFORM public.start_online_exam_session('__exam_test_limited_first', '__exam_test_limited_attempt1', '__exam_test_limits',
-    NULL, 'First Guest', p_device_card=>repeat('c',32));
+    NULL, '', '', repeat('e',32), repeat('d',64), NULL) $q$);
+  PERFORM public.start_online_exam_session(
+    '__exam_test_limited_first', '__exam_test_limited_attempt1', '__exam_test_limits',
+    NULL, 'First Guest', NULL, '', '', repeat('c',32), NULL, NULL);
   PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
     '__exam_test_limited_second', '__exam_test_limited_attempt2', '__exam_test_limits', NULL, 'Different Name',
-    p_device_card=>repeat('c',32)) $q$);
+    NULL, '', '', repeat('c',32), NULL, NULL) $q$);
 END;
 $$;
 RESET ROLE;
@@ -242,11 +263,12 @@ VALUES ('__exam_test_extra', '__exam_test_limits', repeat('c',32), 1);
 SET LOCAL ROLE anon;
 DO $$
 BEGIN
-  PERFORM public.start_online_exam_session('__exam_test_limited_second', '__exam_test_limited_attempt2', '__exam_test_limits',
-    NULL, 'Different Name', p_device_card=>repeat('c',32));
+  PERFORM public.start_online_exam_session(
+    '__exam_test_limited_second', '__exam_test_limited_attempt2', '__exam_test_limits',
+    NULL, 'Different Name', NULL, '', '', repeat('c',32), NULL, NULL);
   PERFORM pg_temp.expect_denied($q$ SELECT public.start_online_exam_session(
     '__exam_test_limited_third', '__exam_test_limited_attempt3', '__exam_test_limits', NULL, 'Third Guest',
-    p_device_card=>repeat('c',32)) $q$);
+    NULL, '', '', repeat('c',32), NULL, NULL) $q$);
 END;
 $$;
 RESET ROLE;

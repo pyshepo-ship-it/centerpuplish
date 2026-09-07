@@ -864,6 +864,15 @@ const sql029 = byName("029_exam_clock_and_result_privacy.sql")
 const start029 = sql029.slice(sql029.indexOf("CREATE OR REPLACE FUNCTION public.start_online_exam_session"), sql029.indexOf("CREATE OR REPLACE FUNCTION public.get_online_exam_session_status"))
 const save029 = sql029.slice(sql029.indexOf("CREATE OR REPLACE FUNCTION public.save_online_exam_progress"), sql029.indexOf("CREATE OR REPLACE FUNCTION public.get_online_exam_answer_feedback"))
 const submit029 = sql029.slice(sql029.indexOf("CREATE OR REPLACE FUNCTION public.submit_online_exam_session"))
+const required029RpcHeaders = [
+  "start_online_exam_session",
+  "get_online_exam_answer_feedback",
+  "get_online_exam_result",
+  "submit_online_exam_session",
+].map(name => {
+  const start = sql029.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`)
+  return sql029.slice(start, sql029.indexOf("RETURNS", start))
+})
 check("029: ورقة الطالب تحمل مرساة الإتاحة العامة دون إعادة مفاتيح التصحيح",
   sql029.includes("'server_now', clock_timestamp()") && sql029.includes("choice.value - 'isCorrect'") &&
   sql029.includes("sq.value - 'correctAnswer' - 'isTrue' - 'corrections'"))
@@ -891,7 +900,11 @@ check("029: المساعد الداخلي لا يمنح المتصفح صف ال
 check("029: حذف التواقيع القديمة يمنع الالتفاف على التحقق الجديد",
   ["get_online_exam_result(TEXT, TEXT)", "get_online_exam_answer_feedback(TEXT, TEXT)", "submit_online_exam_session(TEXT, TEXT, JSONB)"]
     .every(signature => sql029.includes(`DROP FUNCTION IF EXISTS public.${signature};`)))
-check("029: إعادة التسليم لا تكشف درجات/تعليقات المراجعة غير المطلقة",
+check("029: التواقيع الجديدة لا تقبل شكل العميل القديم عبر معاملات DEFAULT",
+  required029RpcHeaders.every(header => header && !/\bDEFAULT\b/i.test(header)) &&
+  /p\.pronargdefaults > 0/.test(sql029))
+check("029: إعادة التسليم تتحمل timedOut تاريخية تالفة ولا تكشف مراجعة غير مطلقة",
+  /jsonb_typeof\(v_result->'attempt'->'manual_override'->'timedOut'\) = 'boolean'/.test(submit029) &&
   (submit029.match(/v_result := public\.get_online_exam_result\(/g) || []).length === 2 &&
   !submit029.includes("'answers', v_existing_attempt.answers") && sql029.includes("v_answer_value - 'review'"))
 check("029: الحظر وحد المحاولات والاستثناءات واعتماد المحاولة لا تضيع مع إعادة تعريف الدوال",

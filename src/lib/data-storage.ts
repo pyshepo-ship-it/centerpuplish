@@ -1264,10 +1264,12 @@ export const deleteYearArchive = (academicYear: string): void => {
 
 /**
  * هل المكرَّم معروض حالياً في لوحة الشرف؟
+ *  - removedAt يخفيه من اللوحة فقط، ويبقى صفه متاحاً للتقارير التاريخية.
  *  - إن حدد المعلم مدة بالأيام (الافتراضي عند الإضافة 30): يُعرض من لحظة الإضافة حتى انتهاء المدة.
  *  - السجلات القديمة (بدون مدة): تُعرض طوال الشهر والعام المحددين (السلوك السابق).
  */
 export const isHonoreeActive = (honoree: Honoree, now: Date = new Date()): boolean => {
+  if (honoree.removedAt) return false
   if (honoree.days && honoree.days > 0 && honoree.createdAt) {
     const end = new Date(honoree.createdAt).getTime() + honoree.days * 24 * 60 * 60 * 1000
     return now.getTime() <= end

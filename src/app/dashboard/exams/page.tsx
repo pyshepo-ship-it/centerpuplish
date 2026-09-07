@@ -1220,7 +1220,9 @@ export default function ExamsPage() {
         )}
         {exam.unit && <Badge variant="outline">الوحدة: {exam.unit}</Badge>}
         {exam.groupId && <Badge variant="outline">{getGroupName(exam.groupId)}</Badge>}
-        {exam.duration && <Badge variant="outline">{exam.duration} دقيقة</Badge>}
+        {(online || exam.duration) && (
+          <Badge variant="outline">{online ? onlineExamDurationMinutes(exam.duration) : exam.duration} دقيقة</Badge>
+        )}
         {!online && exam.showDecorations !== false && (
           <Badge variant="outline" className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
             <Sparkles className="w-3 h-3 ml-1" />
