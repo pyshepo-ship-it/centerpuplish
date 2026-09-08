@@ -1,6 +1,6 @@
 {
   "name": "private-lessons-management",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "description": "نظام متكامل واحترافي لإدارة مراكز الدروس الخصوصية والمدرسين الخصوصيين",
   "scripts": {

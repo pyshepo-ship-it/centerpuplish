@@ -25,6 +25,15 @@ import {
   Store,
   BadgeCheck,
   Globe,
+  Info,
+  Phone,
+  Send,
+  Copyright,
+  Code2,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  Rocket,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -115,6 +124,19 @@ import {
   setTeacherName,
   setTeacherSignatureLine,
 } from "@/lib/branding"
+import {
+  APP_NAME,
+  APP_TECH_STACK,
+  APP_VERSION_LABEL,
+  COPYRIGHT_LINE,
+  COPYRIGHT_YEAR,
+  DEVELOPER,
+  DEVELOPER_MAIL_URL,
+  DEVELOPER_TELEGRAM_URL,
+  DEVELOPER_TEL_URL,
+  DEVELOPER_WHATSAPP_URL,
+} from "@/lib/app-info"
+import { SiteName } from "@/components/site-name"
 import { clearAllRemote, pushAllToCloud, pullAllData, checkSupabaseConnection, forcePushAll, diagnoseSync, type ConnectionCheck, type SyncReport } from "@/lib/supabase/sync"
 import { clearStore, purgeLegacyLocalStorage } from "@/lib/memory-store"
 
@@ -157,8 +179,10 @@ export default function SettingsPage() {
   const [registrationOpen, setRegistrationOpenState] = useState(true)
   const [autoApprove, setAutoApproveState] = useState(false)
   const [reportsEnabled, setReportsEnabledState] = useState(true)
-  // تابات الإعدادات: عام / بوابة الطلاب / البيانات والمزامنة / السنة الدراسية
-  const [settingsTab, setSettingsTab] = useState<"general" | "portal" | "data" | "year">("general")
+  // تابات الإعدادات: عام / بوابة الطلاب / البيانات والمزامنة / السنة الدراسية / حول الموقع
+  const [settingsTab, setSettingsTab] = useState<
+    "general" | "portal" | "data" | "year" | "about"
+  >("general")
 
   // فحص حقيقي: كتابة ثم قراءة من Supabase + عدّ السجلات الفعلية داخل قاعدة البيانات
   const runConnectionCheck = async (silent = false) => {
@@ -205,6 +229,16 @@ export default function SettingsPage() {
     setTeacherSignatureLine(line)
     setSignatureLineInput(line)
     toast.success("تم حفظ عبارة التمني — ستظهر في جميع الاختبارات والشهادات")
+  }
+
+  // نسخ قيمة إلى الحافظة (رقم المطوّر / بريده في تبويب «حول الموقع»)
+  const copyText = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`تم نسخ ${label}`)
+    } catch {
+      toast.error("تعذر النسخ التلقائي — انسخ القيمة يدوياً")
+    }
   }
 
   // استعادة الافتراضي
@@ -583,6 +617,7 @@ export default function SettingsPage() {
           { key: "portal" as const, label: "بوابة الطلاب", icon: GraduationCap },
           { key: "data" as const, label: "البيانات والمزامنة", icon: Database },
           { key: "year" as const, label: "السنة الدراسية", icon: CalendarCheck },
+          { key: "about" as const, label: "حول الموقع", icon: Info },
         ]).map(({ key, label, icon: TabIcon }) => (
           <button
             key={key}
@@ -720,6 +755,337 @@ export default function SettingsPage() {
           </div>
         )}
       </motion.div>
+      )}
+
+      {/* ============ حول الموقع: معلومات النظام، المطوّر، التواصل، حقوق الملكية ============ */}
+      {settingsTab === "about" && (
+      <div className="space-y-6">
+        {/* بطاقة التعريف بالموقع */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+        >
+          <Card className="bg-white dark:bg-gray-900 border-2 border-indigo-200 dark:border-indigo-900 shadow-xl overflow-hidden">
+            <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shrink-0">
+                  <GraduationCap className="w-8 h-8 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <CardTitle className="text-2xl">{APP_NAME}</CardTitle>
+                    <Badge
+                      dir="ltr"
+                      className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-3 py-1 text-sm"
+                    >
+                      {APP_VERSION_LABEL}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
+                    اسم الموقع الحالي:{" "}
+                    <SiteName
+                      className="font-bold text-indigo-700 dark:text-indigo-300"
+                      fallback={DEFAULT_TEACHER_NAME}
+                    />
+                    {" — "}يُغيَّر من تبويب «الحساب والتخصيص»
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                نظام ويب متكامل واحترافي لإدارة مراكز الدروس الخصوصية والمدرسين الخصوصيين:
+                الصفوف والمجموعات والمواعيد، الطلاب وحساباتهم وطلبات تسجيلهم، التحصيل الشهري
+                والمدفوعات والمتأخرات، الاختبارات الورقية والإلكترونية بتصحيح تلقائي، الحضور
+                والغياب، التقارير الفردية والعامة، الإعلانات ولوحة الشرف والملفات والروابط المهمة —
+                مع موقع عام باسم سنترك أو اسمك، وبوابة حسابات خاصة للطلاب، وجدول مواعيد منشور.
+                كل البيانات تُحفظ على السحابة (Supabase) ولا يُخزَّن أي بيان منها على الجهاز،
+                فيفتح المعلم والطالب الموقع من أي جهاز فيجدان نفس البيانات محدَّثة.
+              </p>
+
+              {/* حقائق سريعة */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {([
+                  { label: "إصدار التطبيق", value: APP_VERSION_LABEL, icon: Rocket },
+                  { label: "المطوّر", value: DEVELOPER.name, icon: Code2 },
+                  {
+                    label: "قاعدة البيانات",
+                    value: supabaseConnected ? "Supabase (سحابة)" : "غير متصلة",
+                    icon: Database,
+                  },
+                  { label: "اللغة والاتجاه", value: "العربية — RTL", icon: Globe },
+                ] as const).map(fact => (
+                  <div
+                    key={fact.label}
+                    className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 p-3"
+                  >
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                      <fact.icon className="w-3.5 h-3.5 shrink-0" />
+                      {fact.label}
+                    </p>
+                    <p dir="auto" className="font-bold text-gray-900 dark:text-white text-sm mt-1">
+                      {fact.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* التواصل مع المطوّر */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="h-full"
+          >
+            <Card className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 shadow-lg h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+                    <MessageCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">التواصل مع المطوّر</CardTitle>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      دعم فني، إبلاغ عن مشكلة، طلب ميزة، أو طلب إذن استخدام
+                    </p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-800">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center shrink-0">
+                    <Code2 className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-gray-900 dark:text-white">{DEVELOPER.name}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {DEVELOPER.role} — {APP_NAME}
+                    </p>
+                  </div>
+                </div>
+
+                {/* رقم الهاتف */}
+                <div className="flex items-center justify-between gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Phone className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">الهاتف</p>
+                      <a
+                        href={DEVELOPER_TEL_URL}
+                        dir="ltr"
+                        className="font-bold text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-300"
+                      >
+                        {DEVELOPER.phone}
+                      </a>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyText(DEVELOPER.phone, "رقم الهاتف")}
+                    className="shrink-0 border-gray-300 dark:border-gray-700"
+                  >
+                    <Copy className="w-4 h-4" />
+                    <span>نسخ</span>
+                  </Button>
+                </div>
+
+                {/* البريد الإلكتروني */}
+                <div className="flex items-center justify-between gap-2 p-3 rounded-xl border border-gray-200 dark:border-gray-800">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">البريد الإلكتروني</p>
+                      <a
+                        href={DEVELOPER_MAIL_URL}
+                        dir="ltr"
+                        className="font-bold text-gray-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-300 truncate block"
+                      >
+                        {DEVELOPER.email}
+                      </a>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyText(DEVELOPER.email, "البريد الإلكتروني")}
+                    className="shrink-0 border-gray-300 dark:border-gray-700"
+                  >
+                    <Copy className="w-4 h-4" />
+                    <span>نسخ</span>
+                  </Button>
+                </div>
+
+                {/* قنوات التواصل المباشر */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <a
+                    href={DEVELOPER_WHATSAPP_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5b] text-white text-sm font-bold transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    واتساب
+                  </a>
+                  <a
+                    href={DEVELOPER_TELEGRAM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-[#229ED9] hover:bg-[#1b8bc0] text-white text-sm font-bold transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    تليجرام
+                  </a>
+                  <a
+                    href={DEVELOPER_MAIL_URL}
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white text-sm font-bold transition-colors"
+                  >
+                    <Mail className="w-4 h-4" />
+                    البريد
+                  </a>
+                </div>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed flex items-start gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    واتساب وتليجرام يفتحان محادثة مباشرة مع المطوّر على الرقم{" "}
+                    <span dir="ltr">{DEVELOPER.phone}</span>، والبريد الإلكتروني{" "}
+                    <span dir="ltr">{DEVELOPER.email}</span> للطلبات الرسمية مثل طلب إذن
+                    الاستخدام أو الترخيص.
+                  </span>
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* حقوق الملكية */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="h-full"
+          >
+            <Card className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 shadow-lg h-full">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow-lg">
+                    <Copyright className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl">حقوق الملكية الفكرية</CardTitle>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      شروط الاستخدام والنسخ والتوزيع
+                    </p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-800 text-center">
+                  <p className="font-bold text-gray-900 dark:text-white">{COPYRIGHT_LINE}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {APP_NAME} — الإصدار {APP_VERSION_LABEL}
+                  </p>
+                </div>
+
+                <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-xl p-4">
+                  <p className="text-sm text-red-700 dark:text-red-300 leading-relaxed flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>لا يجوز توزيع النظام بدون إذن مسبق.</strong> الكود المصدري والتصميم
+                      واسم النظام ملكية خاصة للمطوّر {DEVELOPER.name}، وأي نسخ أو توزيع أو نشر
+                      أو بيع أو تعديل — كلياً أو جزئياً — بدون إذن كتابي مسبق يُعد تعدياً على
+                      حقوق الملكية الفكرية ويُعرّض صاحبه للمساءلة القانونية.
+                    </span>
+                  </p>
+                </div>
+
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed list-disc pr-5">
+                  <li>
+                    جميع الحقوق محفوظة © {COPYRIGHT_YEAR} للمطوّر {DEVELOPER.name} — الكود،
+                    التصميم، الشعار، واسم النظام.
+                  </li>
+                  <li>
+                    يُمنع إعادة بيع النظام أو إعادة توزيعه أو تقديمه كخدمة للغير، أو رفعه على
+                    نطاق/متجر آخر، بدون إذن كتابي مسبق.
+                  </li>
+                  <li>
+                    يُمنع إزالة أو إخفاء حقوق الملكية أو اسم المطوّر أو هذا التبويب من أي صفحة
+                    أو ملف مُصدَّر (PDF/تقارير/أوراق اختبارات).
+                  </li>
+                  <li>
+                    الترخيص الممنوح لصاحب السنتر أو المدرس هو ترخيص استخدام للنظام في إدارة
+                    مركزه وطلابه فقط، ولا يشمل حق النشر أو التوزيع.
+                  </li>
+                  <li>
+                    بيانات الطلاب والعلامات والتحصيل ملك لصاحب المركز وحده، والنظام لا يخزنها
+                    إلا في قاعدة بياناته الخاصة (Supabase) ولا يطّلع عليها المطوّر.
+                  </li>
+                </ul>
+
+                <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                  لطلب إذن مكتوب أو ترخيص استخدام أو نسخة مخصّصة لسنترك: تواصل مع المطوّر عبر
+                  واتساب أو تليجرام أو البريد الإلكتروني في بطاقة «التواصل مع المطوّر».
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* إصدار التطبيق والمكوّنات التقنية */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 shadow-lg">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center shadow-lg">
+                  <ShieldCheck className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl">إصدار التطبيق والمكوّنات</CardTitle>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    نسخة النظام الحالية والتقنيات المبني عليها
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                {([
+                  { label: "إصدار التطبيق", value: APP_VERSION_LABEL },
+                  { label: "اسم النظام", value: APP_NAME },
+                  ...APP_TECH_STACK,
+                ]).map(row => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between gap-3 py-2.5 border-b border-gray-200 dark:border-gray-800"
+                  >
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{row.label}</span>
+                    <span
+                      dir="auto"
+                      className="text-sm font-semibold text-gray-900 dark:text-white text-left"
+                    >
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 leading-relaxed">
+                عند وجود مشكلة أو اقتراح تحسين، اذكر رقم الإصدار ({APP_VERSION_LABEL}) في رسالتك
+                للمطوّر ليساعدك أسرع.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
       )}
 
       {/* ============ هوية الموقع: اسم المدرس / السنتر ============ */}
@@ -1396,7 +1762,11 @@ export default function SettingsPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-800">
                     <span className="text-gray-500">الإصدار</span>
-                    <span className="font-semibold text-gray-900 dark:text-white">1.1.0</span>
+                    <span dir="ltr" className="font-semibold text-gray-900 dark:text-white">{APP_VERSION_LABEL}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-800">
+                    <span className="text-gray-500">المطوّر</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">{DEVELOPER.name}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-gray-200 dark:border-gray-800">
                     <span className="text-gray-500">التقنية</span>
