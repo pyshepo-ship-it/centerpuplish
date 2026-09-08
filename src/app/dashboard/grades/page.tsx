@@ -453,7 +453,7 @@ export default function GradesPage() {
               variant="outline"
               onClick={autoSortGrades}
               title="يرتب الصفوف تلقائياً: الأول ثم الثاني... حسب الاسم"
-              className="border-indigo-400 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950"
+              className="border-indigo-400 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950"
             >
               <ArrowUpDown className="w-5 h-5" />
               <span>ترتيب تلقائي حسب الصف</span>
@@ -461,7 +461,7 @@ export default function GradesPage() {
             <Button
               variant="outline"
               onClick={() => setShowSchedule(!showSchedule)}
-              className="border-purple-500 text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950"
+              className="border-purple-500 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950"
             >
               <Calendar className="w-5 h-5" />
               <span>{showSchedule ? 'عرض القوائم' : 'الجدول الأسبوعي'}</span>
