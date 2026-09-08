@@ -908,7 +908,7 @@ export default function SettingsPage() {
               <div>
                 <Label>البريد الإلكتروني</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <Input value={userEmail} disabled className="bg-gray-50" dir="ltr" />
+                  <Input value={userEmail} disabled className="bg-gray-50 dark:bg-gray-800" dir="ltr" />
                   <Mail className="w-5 h-5 text-gray-400 shrink-0" />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">

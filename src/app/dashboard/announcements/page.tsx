@@ -426,7 +426,7 @@ export default function AnnouncementsPage() {
             <span>نشر جدول المجموعات للطلاب</span>
           </Button>
           <Link href="/">
-            <Button variant="outline" className="border-indigo-500 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950">
+            <Button variant="outline" className="border-indigo-500 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950">
               <Home className="w-4 h-4" />
               <span>عرض الصفحة الرئيسية</span>
             </Button>

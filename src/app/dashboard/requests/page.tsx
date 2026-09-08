@@ -321,7 +321,7 @@ export default function RequestsPage() {
             طلبات التسجيل الجديد وطلبات الانضمام لمجموعات أخرى — لا يستطيع الطالب الدخول أو النقل إلا بعد موافقتك
           </p>
         </div>
-        <Button variant="outline" onClick={pullThenRefresh} disabled={syncing} className="border-indigo-400 text-indigo-600 shrink-0">
+        <Button variant="outline" onClick={pullThenRefresh} disabled={syncing} className="border-indigo-400 text-indigo-600 dark:text-indigo-400 shrink-0">
           {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
           <span>{syncing ? "جاري المزامنة..." : "تحديث الطلبات من الموقع"}</span>
         </Button>
