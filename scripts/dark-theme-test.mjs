@@ -661,6 +661,26 @@ const scenarios = [
   { name: "طلبات الطلاب", page: "requests", open: null },
   { name: "الإعلانات + نافذة إنشاء إعلان", page: "announcements", open: "إضافة إعلان" },
   { name: "الإعدادات", page: "settings", open: null },
+  {
+    name: "الإعدادات — تبويب «حول الموقع»",
+    page: "settings",
+    open: null,
+    tab: "حول الموقع",
+    expect: [
+      "محمد عبده",
+      "01207770329",
+      "conta.shepo@gmail.com",
+      "v1.0.2",
+      "جميع الحقوق محفوظة",
+      "لا يجوز توزيع النظام بدون إذن مسبق",
+    ],
+    links: [
+      "wa.me/201207770329",
+      "mailto:conta.shepo@gmail.com",
+      "tel:+201207770329",
+      "tg://resolve?phone=201207770329",
+    ],
+  },
   { name: "الاختبارات", page: "exams", open: null },
 ]
 
@@ -672,7 +692,34 @@ for (const sc of scenarios) {
   const { unmount } = await mountPage(PAGES[sc.page])
   await flush()
 
+  // فتح تبويب فرعي داخل الصفحة (مثل تبويبات الإعدادات) قبل الفحص
+  if (sc.tab) {
+    const tabBtn = byText(sc.tab)
+    if (tabBtn) {
+      await click(tabBtn)
+      await flush(80)
+    } else {
+      fail(`تبويب «${sc.tab}» غير موجود في ${sc.name}`)
+    }
+  }
+
   await auditSubtree(window.document.body, `${sc.name} — الصفحة`)
+
+  // نصوص وروابط يجب أن تظهر فعلاً بعد التصيير
+  if (sc.expect) {
+    const text = window.document.body.textContent || ""
+    for (const needle of sc.expect) {
+      if (text.includes(needle)) pass(`${sc.name} — يعرض «${needle}»`)
+      else fail(`${sc.name} — لا يعرض «${needle}»`)
+    }
+  }
+  if (sc.links) {
+    const anchors = [...window.document.querySelectorAll("a")].map(a => a.getAttribute("href") || "")
+    for (const href of sc.links) {
+      if (anchors.some(h => h.includes(href))) pass(`${sc.name} — رابط ${href}`)
+      else fail(`${sc.name} — لا رابط فيه ${href}`)
+    }
+  }
 
   if (sc.open) {
     const btn = byText(sc.open)
